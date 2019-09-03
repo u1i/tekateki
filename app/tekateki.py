@@ -2,6 +2,7 @@ from bottle import Bottle, request, response
 import json, os, redis, uuid
 from random import randint
 from datetime import datetime
+from functools import wraps
 
 max_requests_per_session = 5
 
@@ -17,33 +18,87 @@ def error404(error):
 def error405(error):
     return("Nothing here.")
 
+# Default 500 handler
+@app.error(500)
+def error500(error):
+    return("Something really bad happened.")
+
 @app.route("/")
 def get_home():
-    return dict({"message" : "Welcome! Ready for the challenge? Navigate to /start"})
+    return dict({"message" : "Welcome! Ready to /start the challenge?"})
+
+def return_error(message, status):
+    response.status = status
+    return dict({"message":message})
+
+def validate_session(function):
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        session = request.headers.get('Session')
+        if not session:
+            return return_error('\'Session\' header is missing. /get_session will give you one!', 401)
+
+        apikey = request.headers.get('ApiKey')
+        if not apikey:
+            return return_error('\'ApiKey\' header is missing. You should have received a personal key from your friendly team that manages this challenge.', 401)
+
+        access = rc.get("KEY:" + apikey)
+
+        if access == None:
+            return return_error('Invalid ApiKey.', 401)
+
+        stored_session = rc.get("SESSION:" + session)
+        if stored_session == None or int(stored_session) <= 0:
+            return return_error('Invalid session. A token is valid for ' + str(max_requests_per_session) + ' requests.', 401)
+        else:
+            rc.decr("SESSION:" + session)
+            return function(*args, **kwargs)
+
+    return wrapper
 
 @app.route("/start")
+@validate_session
 def challenge_start():
-    return "huhu"
+    return "this is what I got so far..."
+
+@app.route("/gen_key")
+def genkey():
+    if not 'secret' in request.query:
+        return("ERROR: please supply ?secret=XXX")
+
+    if request.query["secret"] != secret:
+        return("ERROR: secret not correct")
+    s = str(rc.incr("numsessions")) + "-"+ str(uuid.uuid4())[0:5]
+    rc.set("KEY:" + s, "generated " + str(datetime.now()))
+    return(s)
 
 @app.route("/get_session", method='GET')
 @app.route("/get_session", method='DELETE')
 @app.route("/get_session", method='PUT')
 @app.route("/get_session", method='GET')
-def get_session1():
+def get_session_dummy():
     return dict({"message" : "Uh-oh. The session endpoint doesn't like " + request.method + ". Try another method?"})
 
 
 @app.route("/get_session", method='POST')
 def get_session():
     session = str(uuid.uuid4())
+    rc.set("SESSION:" + session, str(max_requests_per_session))
     return dict({"message" : "Session is valid for " + str(max_requests_per_session) + " requests", "session": session})
-
-
 
 # Initialization
 # We need a Redis connection
 if not "redis_host" in os.environ or not "redis_port" in os.environ:
         exit("ERROR: please set the environment variables for Redis host")
+
+if not "secret" in os.environ:
+        exit("ERROR: please set the environment variable 'secret'")
+
+if not "challenge_answer" in os.environ:
+        exit("ERROR: please set the environment variable 'challenge_answer'")
+
+secret = os.environ['secret']
+challenge_answer = os.environ['challenge_answer']
 
 # Connect to the Redis backend
 redis_host = os.environ['redis_host']
