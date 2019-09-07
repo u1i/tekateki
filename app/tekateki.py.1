@@ -38,6 +38,15 @@ def validate_session(function):
         if not session:
             return return_error('\'Session\' header is missing. /get_session will give you one!', 401)
 
+        apikey = request.headers.get('ApiKey')
+        if not apikey:
+            return return_error('\'ApiKey\' header is missing. You should have received a personal key from your friendly team that manages this challenge.', 401)
+
+        access = rc.get("KEY:" + apikey)
+
+        if access == None:
+            return return_error('Invalid ApiKey.', 401)
+
         stored_session = rc.get("SESSION:" + session)
         if stored_session == None or int(stored_session) <= 0:
             return return_error('Invalid session. A token is valid for ' + str(max_requests_per_session) + ' requests.', 401)
@@ -59,7 +68,7 @@ def genkey():
 
     if request.query["secret"] != secret:
         return("ERROR: secret not correct")
-    s = str(rc.incr("SESSIONS")) + "-"+ str(uuid.uuid4())[0:5]
+    s = str(rc.incr("numsessions")) + "-"+ str(uuid.uuid4())[0:5]
     rc.set("KEY:" + s, "generated " + str(datetime.now()))
     return(s)
 
@@ -73,19 +82,8 @@ def get_session_dummy():
 
 @app.route("/get_session", method='POST')
 def get_session():
-    apikey = request.headers.get('ApiKey')
-    if not apikey:
-        return return_error('\'ApiKey\' header is missing. You should have received a personal key from your friendly team that manages this challenge.', 401)
-
-    access = rc.get("KEY:" + apikey)
-
-    if access == None:
-        return return_error('Invalid ApiKey.', 401)
-
     session = str(uuid.uuid4())
     rc.set("SESSION:" + session, str(max_requests_per_session))
-    rc.set("SESSION_OWNER:" + session, str(apikey))
-    rc.incr("NUMSESSIONS:" + str(apikey))
     return dict({"message" : "Session is valid for " + str(max_requests_per_session) + " requests", "session": session})
 
 # Initialization
