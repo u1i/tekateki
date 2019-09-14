@@ -50,7 +50,7 @@ def validate_session(function):
 @app.route("/start")
 @validate_session
 def challenge_start():
-    return "this is what I got so far..."
+    return "This is where the challenge starts..."
 
 @app.route("/gen_key")
 def genkey():
